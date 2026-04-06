@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { collection, getDocs, query, orderBy } from "firebase/firestore";
+import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
 import { db } from "../firebase";
 import PasswordForm from "./PasswordForm";
 import PasswordCard from "./PasswordCard";
@@ -16,31 +16,33 @@ export default function Dashboard({ cryptoKey, onLock }) {
   const [search, setSearch] = useState("");
   const [editEntry, setEditEntry] = useState(null);
 
-  const fetchPasswords = async () => {
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
     setLoading(true);
-    try {
-      const q = query(collection(db, "passwords"), orderBy("createdAt", "desc"));
-      const snapshot = await getDocs(q);
+    const q = query(collection(db, "passwords"), orderBy("createdAt", "desc"));
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       }));
       setPasswords(data);
-    } catch (err) {
-      console.error("Failed to fetch passwords:", err);
-    } finally {
       setLoading(false);
-    }
-  };
+      setError(null);
+    }, (err) => {
+      console.error("Firestore error:", err);
+      setError(err.message);
+      setLoading(false);
+    });
 
-  useEffect(() => {
-    fetchPasswords();
+    return () => unsubscribe();
   }, []);
 
   const filtered = passwords.filter(
     (p) =>
-      p.site.toLowerCase().includes(search.toLowerCase()) ||
-      p.username.toLowerCase().includes(search.toLowerCase())
+      (p.site || "").toLowerCase().includes(search.toLowerCase()) ||
+      (p.username || "").toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -57,7 +59,7 @@ export default function Dashboard({ cryptoKey, onLock }) {
       </header>
 
       <main className="dashboard-main">
-        <PasswordForm cryptoKey={cryptoKey} onAdded={fetchPasswords} />
+        <PasswordForm cryptoKey={cryptoKey} onAdded={() => {}} />
 
         <div className="passwords-section">
           <div className="section-header">
@@ -79,6 +81,15 @@ export default function Dashboard({ cryptoKey, onLock }) {
               <span className="spinner large" />
               <p>Decrypting vault...</p>
             </div>
+          ) : error ? (
+            <div className="error-state">
+              <p>Failed to load passwords: {error}</p>
+              {error.includes("index") && (
+                <p className="error-hint">
+                  Firestore requires an index for this query. Check your browser console for the link to create it.
+                </p>
+              )}
+            </div>
           ) : filtered.length === 0 ? (
             <div className="empty-state">
               <HiShieldCheck className="empty-icon" />
@@ -95,7 +106,7 @@ export default function Dashboard({ cryptoKey, onLock }) {
                   key={entry.id}
                   entry={entry}
                   cryptoKey={cryptoKey}
-                  onDelete={fetchPasswords}
+                  onDelete={() => {}}
                   onEdit={setEditEntry}
                 />
               ))}
@@ -109,7 +120,7 @@ export default function Dashboard({ cryptoKey, onLock }) {
           entry={editEntry}
           cryptoKey={cryptoKey}
           onClose={() => setEditEntry(null)}
-          onUpdated={fetchPasswords}
+          onUpdated={() => {}}
         />
       )}
     </div>
